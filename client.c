@@ -36,10 +36,23 @@ void catch_ctrl_c_and_exit(int sig) {
     flag = 1;
 }
 
+void caesar_encrypt(char *message, int shift) {
+    for (int i = 0; message[i] != '\0'; ++i) {
+        char c = message[i];
+        if (c >= 'a' && c <= 'z') {
+            message[i] = (c - 'a' + shift) % 26 + 'a';
+        } else if (c >= 'A' && c <= 'Z') {
+            message[i] = (c - 'A' + shift) % 26 + 'A';
+        }
+    }
+}
+
+void caesar_decrypt(char *message, int shift) {
+    caesar_encrypt(message, 26 - shift);
+}
 void send_msg_handler() {
     char message[BUFFER_SIZE] = {};
     char buffer[BUFFER_SIZE + NAME_LEN] = {};
-
     while (1) {
         str_overwrite_stdout();
         fgets(message, BUFFER_SIZE, stdin);
@@ -48,27 +61,25 @@ void send_msg_handler() {
         if (strcmp(message, "exit") == 0) {
             break;
         } else {
-            sprintf(buffer, "%s: %s\n", name, message);
+            caesar_encrypt(message, 3); // Encrypt message with a shift of 3
+            snprintf(buffer, sizeof(buffer), "%s: %s\n", name, message);
             send(sockfd, buffer, strlen(buffer), 0);
         }
-
         memset(message, 0, BUFFER_SIZE);
         memset(buffer, 0, BUFFER_SIZE + NAME_LEN);
     }
     catch_ctrl_c_and_exit(2);
 }
-
 void recv_msg_handler() {
     char message[BUFFER_SIZE] = {};
     while (1) {
         int receive = recv(sockfd, message, BUFFER_SIZE, 0);
         if (receive > 0) {
+            caesar_decrypt(message, 3); // Decrypt message with a shift of 3
             printf("%s", message);
             str_overwrite_stdout();
         } else if (receive == 0) {
             break;
-        } else {
-            // -1
         }
         memset(message, 0, sizeof(message));
     }
