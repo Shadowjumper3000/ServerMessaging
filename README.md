@@ -13,8 +13,8 @@ This is a simple chat application implemented in C. It consists of a server and 
 ### Cloning the Repository
 
 ```sh
-git clone https://github.com/yourusername/yourrepository.git
-cd yourrepository
+git clone https://github.com/Shadowjumper3000/ServerMessaging.git
+cd ServerMessaging
 ```
 
 ### Compiling and Running on Windows
