@@ -85,9 +85,31 @@ void queue_remove(int uid) {
     pthread_mutex_unlock(&clients_mutex);
 }
 
+void caesar_encrypt(char *message, int shift) {
+    for (int i = 0; message[i] != '\0'; ++i) {
+        char c = message[i];
+        if (c >= 'a' && c <= 'z') {
+            message[i] = (c - 'a' + shift) % 26 + 'a';
+        } else if (c >= 'A' && c <= 'Z') {
+            message[i] = (c - 'A' + shift) % 26 + 'A';
+        }
+    }
+}
+
+void caesar_decrypt(char *message, int shift) {
+    caesar_encrypt(message, 26 - shift);
+}
+
 void send_message(char *s, int uid) {
     pthread_mutex_lock(&clients_mutex);
-
+    char *colon_pos = strchr(s, ':');
+    if (colon_pos != NULL) {
+        char encrypted_message[BUFFER_SIZE] = {};
+        strcpy(encrypted_message, colon_pos + 2); // Skip ": "
+        caesar_encrypt(encrypted_message, 3); // Encrypt message with a shift of 3
+        *colon_pos = '\0'; // Null-terminate the name part
+        snprintf(s, BUFFER_SIZE, "%s: %s", s, encrypted_message);
+    }
     for (int i = 0; i < MAX_CLIENTS; ++i) {
         if (clients[i]) {
             if (clients[i]->uid != uid) {
@@ -98,7 +120,6 @@ void send_message(char *s, int uid) {
             }
         }
     }
-
     pthread_mutex_unlock(&clients_mutex);
 }
 
@@ -116,28 +137,31 @@ void *handle_client(void *arg) {
         leave_flag = 1;
     } else {
         strcpy(cli->name, name);
-        sprintf(buff_out, "%s has joined\n", cli->name);
+        snprintf(buff_out, sizeof(buff_out), "%s has joined\n", cli->name);
         printf("%s", buff_out);
         send_message(buff_out, cli->uid);
     }
 
     memset(buff_out, 0, BUFFER_SIZE);
 
-    while (1) {
-        if (leave_flag) {
-            break;
-        }
-
+    while (!leave_flag) {
         int receive = recv(cli->sockfd, buff_out, BUFFER_SIZE, 0);
         if (receive > 0) {
+            char *colon_pos = strchr(buff_out, ':');
+            if (colon_pos != NULL) {
+                char encrypted_message[BUFFER_SIZE] = {};
+                strcpy(encrypted_message, colon_pos + 2); // Skip ": "
+                caesar_decrypt(encrypted_message, 3); // Decrypt message with a shift of 3
+                *colon_pos = '\0'; // Null-terminate the name part
+                snprintf(buff_out, BUFFER_SIZE, "%s: %s", buff_out, encrypted_message);
+            }
             if (strlen(buff_out) > 0) {
                 send_message(buff_out, cli->uid);
-
                 str_trim_lf(buff_out, strlen(buff_out));
                 printf("%s -> %s\n", buff_out, cli->name);
             }
         } else if (receive == 0 || strcmp(buff_out, "exit") == 0) {
-            sprintf(buff_out, "%s has left\n", cli->name);
+            snprintf(buff_out, sizeof(buff_out), "%s has left\n", cli->name);
             printf("%s", buff_out);
             send_message(buff_out, cli->uid);
             leave_flag = 1;
@@ -145,7 +169,6 @@ void *handle_client(void *arg) {
             printf("ERROR: -1\n");
             leave_flag = 1;
         }
-
         memset(buff_out, 0, BUFFER_SIZE);
     }
 
@@ -154,7 +177,6 @@ void *handle_client(void *arg) {
     free(cli);
     client_count--;
     pthread_detach(pthread_self());
-
     return NULL;
 }
 
