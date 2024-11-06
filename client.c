@@ -14,6 +14,8 @@
 #define BUFFER_SIZE 2048
 #define NAME_LEN 32
 
+
+
 volatile sig_atomic_t flag = 0;
 int sockfd = 0;
 char name[NAME_LEN];
@@ -34,6 +36,19 @@ void str_trim_lf(char* arr, int length) {
 
 void catch_ctrl_c_and_exit(int sig) {
     flag = 1;
+}
+
+void list_rooms() {
+    char buffer[BUFFER_SIZE] = "/list_rooms";
+    send(sockfd, buffer, strlen(buffer), 0);
+
+    char response[BUFFER_SIZE] = {};
+    int receive = recv(sockfd, response, BUFFER_SIZE, 0);
+    if (receive > 0) {
+        printf("Available rooms:\n%s\n", response);
+    } else {
+        printf("Failed to retrieve rooms.\n");
+    }
 }
 
 void caesar_encrypt(char *message, int shift) {
@@ -62,10 +77,11 @@ void send_msg_handler() {
         if (strcmp(message, "exit") == 0) {
             break;
         } else {
-            char encrypted_message[BUFFER_SIZE] = {};
-            strcpy(encrypted_message, message);
-            caesar_encrypt(encrypted_message, 3); // Encrypt message with a shift of 3
-            snprintf(buffer, sizeof(buffer), "%s: %s\n", name, encrypted_message);
+            if (strncmp(message, "/msg", 4) == 0 || strcmp(message, "/list") == 0 || strncmp(message, "/join", 5) == 0 || strncmp(message, "/create", 7) == 0) {
+                snprintf(buffer, sizeof(buffer), "%s", message);
+            } else {
+                snprintf(buffer, sizeof(buffer), "%s: %s\n", name, message);
+            }
             send(sockfd, buffer, strlen(buffer), 0);
         }
         memset(message, 0, BUFFER_SIZE);
@@ -114,6 +130,11 @@ int main() {
     fgets(server_ip, 16, stdin);
     str_trim_lf(server_ip, strlen(server_ip));
 
+    char room_name[32];
+    printf("Enter room name: ");
+    fgets(room_name, 32, stdin);
+    str_trim_lf(room_name, strlen(room_name));
+
     struct sockaddr_in server_addr;
 
     // Initialize Winsock (Windows only)
@@ -151,8 +172,9 @@ int main() {
         return EXIT_FAILURE;
     }
 
-    // Send name
+    // Send name and room name
     send(sockfd, name, NAME_LEN, 0);
+    send(sockfd, room_name, 32, 0);
 
     printf("=== WELCOME TO THE CHATROOM ===\n");
 
@@ -176,11 +198,8 @@ int main() {
     }
 
     close(sockfd);
-
-    // Cleanup Winsock (Windows only)
     #ifdef _WIN32
     WSACleanup();
     #endif
-
     return EXIT_SUCCESS;
 }

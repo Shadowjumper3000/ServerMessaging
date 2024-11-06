@@ -19,42 +19,221 @@
 
 #define PORT 8080
 #define MAX_CLIENTS 5
+#define MAX_ROOMS 10
 #define BUFFER_SIZE 2048
 
-static unsigned int client_count = 0;
-static int uid = 10;
-
-typedef struct {
+typedef struct client {
     struct sockaddr_in address;
     int sockfd;
     int uid;
     char name[32];
+    struct room *room;
 } client_t;
 
-client_t *clients[MAX_CLIENTS];
+typedef struct room {
+    char name[32];
+    client_t *clients[MAX_CLIENTS];
+} room_t;
 
+pthread_mutex_t rooms_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-void str_overwrite_stdout() {
-    printf("\r%s", "> ");
-    fflush(stdout);
-}
+static unsigned int client_count = 0;
+static int uid = 10;
 
-void str_trim_lf(char* arr, int length) {
-    for (int i = 0; i < length; i++) {
-        if (arr[i] == '\n') {
-            arr[i] = '\0';
+client_t *clients[MAX_CLIENTS];
+room_t *rooms[MAX_ROOMS];
+
+// Forward declarations
+void str_trim_lf(char* arr, int length);
+void queue_remove(int uid);
+
+void create_room(char *room_name) {
+    pthread_mutex_lock(&rooms_mutex);
+    for (int i = 0; i < MAX_ROOMS; ++i) {
+        if (!rooms[i]) {
+            rooms[i] = (room_t *)malloc(sizeof(room_t));
+            strcpy(rooms[i]->name, room_name);
+            for (int j = 0; j < MAX_CLIENTS; ++j) {
+                rooms[i]->clients[j] = NULL;
+            }
             break;
         }
     }
+    pthread_mutex_unlock(&rooms_mutex);
 }
 
-void print_client_addr(struct sockaddr_in addr) {
-    printf("%d.%d.%d.%d",
-           addr.sin_addr.s_addr & 0xff,
-           (addr.sin_addr.s_addr & 0xff00) >> 8,
-           (addr.sin_addr.s_addr & 0xff0000) >> 16,
-           (addr.sin_addr.s_addr & 0xff000000) >> 24);
+void join_room(client_t *cli, char *room_name) {
+    pthread_mutex_lock(&rooms_mutex);
+    for (int i = 0; i < MAX_ROOMS; ++i) {
+        if (rooms[i] && strcmp(rooms[i]->name, room_name) == 0) {
+            for (int j = 0; j < MAX_CLIENTS; ++j) {
+                if (!rooms[i]->clients[j]) {
+                    rooms[i]->clients[j] = cli;
+                    cli->room = rooms[i];
+                    break;
+                }
+            }
+            break;
+        }
+    }
+    pthread_mutex_unlock(&rooms_mutex);
+}
+
+void leave_room(client_t *cli) {
+    if (cli->room) {
+        pthread_mutex_lock(&rooms_mutex);
+        for (int i = 0; i < MAX_CLIENTS; ++i) {
+            if (cli->room->clients[i] == cli) {
+                cli->room->clients[i] = NULL;
+                break;
+            }
+        }
+        cli->room = NULL;
+        pthread_mutex_unlock(&rooms_mutex);
+    }
+}
+
+void send_message(char *s, int uid) {
+    pthread_mutex_lock(&clients_mutex);
+
+    char *command = strtok(s, " ");
+    if (command && strcmp(command, "/msg") == 0) {
+        // Private message
+        char *recipient_name = strtok(NULL, " ");
+        char *private_message = strtok(NULL, "\0");
+
+        if (recipient_name && private_message) {
+            for (int i = 0; i < MAX_CLIENTS; ++i) {
+                if (clients[i] && strcmp(clients[i]->name, recipient_name) == 0) {
+                    char formatted_message[BUFFER_SIZE];
+                    snprintf(formatted_message, BUFFER_SIZE, "[Private] %s: %s", clients[uid]->name, private_message);
+                    if (send(clients[i]->sockfd, formatted_message, strlen(formatted_message), 0) < 0) {
+                        perror("ERROR: send to descriptor failed");
+                    }
+                    break;
+                }
+            }
+        }
+    } else if (command && strcmp(command, "/list") == 0) {
+        // List all clients in the room
+        char list_message[BUFFER_SIZE] = "Connected clients:\n";
+        client_t *cli = clients[uid];
+        if (cli->room) {
+            for (int i = 0; i < MAX_CLIENTS; ++i) {
+                if (cli->room->clients[i]) {
+                    strcat(list_message, cli->room->clients[i]->name);
+                    strcat(list_message, "\n");
+                }
+            }
+            if (send(cli->sockfd, list_message, strlen(list_message), 0) < 0) {
+                perror("ERROR: send to descriptor failed");
+            }
+        }
+    } else if (command && strcmp(command, "/list_rooms") == 0) {
+        // List all rooms
+        char list_message[BUFFER_SIZE] = "Available rooms:\n";
+        for (int i = 0; i < MAX_ROOMS; ++i) {
+            if (rooms[i]) {
+                strcat(list_message, rooms[i]->name);
+                strcat(list_message, "\n");
+            }
+        }
+        if (send(clients[uid]->sockfd, list_message, strlen(list_message), 0) < 0) {
+            perror("ERROR: send to descriptor failed");
+        }
+    } else if (command && strcmp(command, "/join") == 0) {
+        // Join a room
+        char *room_name = strtok(NULL, " ");
+        if (room_name) {
+            leave_room(clients[uid]);
+            join_room(clients[uid], room_name);
+            char join_message[BUFFER_SIZE];
+            snprintf(join_message, BUFFER_SIZE, "%s has joined the room %s\n", clients[uid]->name, room_name);
+            send_message(join_message, uid);
+        }
+    } else if (command && strcmp(command, "/create") == 0) {
+        // Create a room
+        char *room_name = strtok(NULL, " ");
+        if (room_name) {
+            create_room(room_name);
+            char create_message[BUFFER_SIZE];
+            snprintf(create_message, BUFFER_SIZE, "Room %s created\n", room_name);
+            send_message(create_message, uid);
+        }
+    } else {
+        // Broadcast message to the room
+        client_t *cli = clients[uid];
+        if (cli->room) {
+            for (int i = 0; i < MAX_CLIENTS; ++i) {
+                if (cli->room->clients[i] && cli->room->clients[i]->uid != uid) {
+                    if (send(cli->room->clients[i]->sockfd, s, strlen(s), 0) < 0) {
+                        perror("ERROR: send to descriptor failed");
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    pthread_mutex_unlock(&clients_mutex);
+}
+
+void *handle_client(void *arg) {
+    char buff_out[BUFFER_SIZE];
+    char name[32];
+    char room_name[32];
+    int leave_flag = 0;
+
+    client_count++;
+    client_t *cli = (client_t *)arg;
+
+    // Receive name
+    if (recv(cli->sockfd, name, 32, 0) <= 0 || strlen(name) < 2 || strlen(name) >= 32 - 1) {
+        printf("Didn't enter the name.\n");
+        leave_flag = 1;
+    } else {
+        strcpy(cli->name, name);
+        // Receive room name
+        if (recv(cli->sockfd, room_name, 32, 0) <= 0 || strlen(room_name) < 2 || strlen(room_name) >= 32 - 1) {
+            printf("Didn't enter the room name.\n");
+            leave_flag = 1;
+        } else {
+            join_room(cli, room_name);
+            snprintf(buff_out, sizeof(buff_out), "%s has joined the room %s\n", cli->name, room_name);
+            printf("%s", buff_out);
+            send_message(buff_out, cli->uid);
+        }
+    }
+
+    memset(buff_out, 0, BUFFER_SIZE);
+
+    while (!leave_flag) {
+        int receive = recv(cli->sockfd, buff_out, BUFFER_SIZE, 0);
+        if (receive > 0) {
+            if (strlen(buff_out) > 0) {
+                send_message(buff_out, cli->uid);
+                str_trim_lf(buff_out, strlen(buff_out));
+                printf("%s -> %s\n", buff_out, cli->name);
+            }
+        } else if (receive == 0 || strcmp(buff_out, "exit") == 0) {
+            snprintf(buff_out, sizeof(buff_out), "%s has left\n", cli->name);
+            printf("%s", buff_out);
+            send_message(buff_out, cli->uid);
+            leave_flag = 1;
+        } else {
+            printf("ERROR: -1\n");
+            leave_flag = 1;
+        }
+        memset(buff_out, 0, BUFFER_SIZE);
+    }
+
+    close(cli->sockfd);
+    queue_remove(cli->uid);
+    free(cli);
+    client_count--;
+    pthread_detach(pthread_self());
+    return NULL;
 }
 
 void queue_add(client_t *cl) {
@@ -85,99 +264,21 @@ void queue_remove(int uid) {
     pthread_mutex_unlock(&clients_mutex);
 }
 
-void caesar_encrypt(char *message, int shift) {
-    for (int i = 0; message[i] != '\0'; ++i) {
-        char c = message[i];
-        if (c >= 'a' && c <= 'z') {
-            message[i] = (c - 'a' + shift) % 26 + 'a';
-        } else if (c >= 'A' && c <= 'Z') {
-            message[i] = (c - 'A' + shift) % 26 + 'A';
+void str_trim_lf(char* arr, int length) {
+    for (int i = 0; i < length; i++) {
+        if (arr[i] == '\n') {
+            arr[i] = '\0';
+            break;
         }
     }
 }
 
-void caesar_decrypt(char *message, int shift) {
-    caesar_encrypt(message, 26 - shift);
-}
-
-void send_message(char *s, int uid) {
-    pthread_mutex_lock(&clients_mutex);
-    char *colon_pos = strchr(s, ':');
-    if (colon_pos != NULL) {
-        char encrypted_message[BUFFER_SIZE] = {};
-        strcpy(encrypted_message, colon_pos + 2); // Skip ": "
-        caesar_encrypt(encrypted_message, 3); // Encrypt message with a shift of 3
-        *colon_pos = '\0'; // Null-terminate the name part
-        snprintf(s, BUFFER_SIZE, "%s: %s", s, encrypted_message);
-    }
-    for (int i = 0; i < MAX_CLIENTS; ++i) {
-        if (clients[i]) {
-            if (clients[i]->uid != uid) {
-                if (send(clients[i]->sockfd, s, strlen(s), 0) < 0) {
-                    perror("ERROR: send to descriptor failed");
-                    break;
-                }
-            }
-        }
-    }
-    pthread_mutex_unlock(&clients_mutex);
-}
-
-void *handle_client(void *arg) {
-    char buff_out[BUFFER_SIZE];
-    char name[32];
-    int leave_flag = 0;
-
-    client_count++;
-    client_t *cli = (client_t *)arg;
-
-    // Name
-    if (recv(cli->sockfd, name, 32, 0) <= 0 || strlen(name) < 2 || strlen(name) >= 32 - 1) {
-        printf("Didn't enter the name.\n");
-        leave_flag = 1;
-    } else {
-        strcpy(cli->name, name);
-        snprintf(buff_out, sizeof(buff_out), "%s has joined\n", cli->name);
-        printf("%s", buff_out);
-        send_message(buff_out, cli->uid);
-    }
-
-    memset(buff_out, 0, BUFFER_SIZE);
-
-    while (!leave_flag) {
-        int receive = recv(cli->sockfd, buff_out, BUFFER_SIZE, 0);
-        if (receive > 0) {
-            char *colon_pos = strchr(buff_out, ':');
-            if (colon_pos != NULL) {
-                char encrypted_message[BUFFER_SIZE] = {};
-                strcpy(encrypted_message, colon_pos + 2); // Skip ": "
-                caesar_decrypt(encrypted_message, 3); // Decrypt message with a shift of 3
-                *colon_pos = '\0'; // Null-terminate the name part
-                snprintf(buff_out, BUFFER_SIZE, "%s: %s", buff_out, encrypted_message);
-            }
-            if (strlen(buff_out) > 0) {
-                send_message(buff_out, cli->uid);
-                str_trim_lf(buff_out, strlen(buff_out));
-                printf("%s -> %s\n", buff_out, cli->name);
-            }
-        } else if (receive == 0 || strcmp(buff_out, "exit") == 0) {
-            snprintf(buff_out, sizeof(buff_out), "%s has left\n", cli->name);
-            printf("%s", buff_out);
-            send_message(buff_out, cli->uid);
-            leave_flag = 1;
-        } else {
-            printf("ERROR: -1\n");
-            leave_flag = 1;
-        }
-        memset(buff_out, 0, BUFFER_SIZE);
-    }
-
-    close(cli->sockfd);
-    queue_remove(cli->uid);
-    free(cli);
-    client_count--;
-    pthread_detach(pthread_self());
-    return NULL;
+void print_client_addr(struct sockaddr_in addr) {
+    printf("%d.%d.%d.%d",
+           addr.sin_addr.s_addr & 0xff,
+           (addr.sin_addr.s_addr & 0xff00) >> 8,
+           (addr.sin_addr.s_addr & 0xff0000) >> 16,
+           (addr.sin_addr.s_addr & 0xff000000) >> 24);
 }
 
 int main() {
