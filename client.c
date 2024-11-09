@@ -24,12 +24,16 @@ void send_msg_handler() {
 
         if (strcmp(message, "exit") == 0) {
             break;
+        } else if (strncmp(message, "/msg", 4) == 0 || strncmp(message, "/users", 6) == 0) {
+            snprintf(buffer, sizeof(buffer), "%s", message);
         } else {
             snprintf(buffer, sizeof(buffer), "%s: %s", name, message);
-            if (send(sockfd, buffer, strlen(buffer), 0) == -1) {
-                perror("ERROR: send message failed");
-            }
         }
+
+        if (send(sockfd, buffer, strlen(buffer), 0) == -1) {
+            perror("ERROR: send message failed");
+        }
+
         memset(message, 0, BUFFER_SIZE);
         memset(buffer, 0, BUFFER_SIZE + NAME_LEN);
     }

@@ -152,6 +152,34 @@ void list_rooms(int sockfd) {
     send(sockfd, list_message, strlen(list_message), 0);
 }
 
+void send_private_message(char *target_name, char *message, client_t *cli) {
+    pthread_mutex_lock(&clients_mutex);
+    for (int i = 0; i < MAX_CLIENTS; ++i) {
+        if (clients[i] && strcmp(clients[i]->name, target_name) == 0) {
+            char private_message[BUFFER_SIZE + NAME_LEN];
+            snprintf(private_message, sizeof(private_message), "[Private] %s: %s", cli->name, message);
+            if (send(clients[i]->sockfd, private_message, strlen(private_message), 0) < 0) {
+                perror("ERROR: send to descriptor failed");
+            }
+            break;
+        }
+    }
+    pthread_mutex_unlock(&clients_mutex);
+}
+
+void list_users(int sockfd) {
+    pthread_mutex_lock(&clients_mutex);
+    char list_message[BUFFER_SIZE] = "Connected users:\n";
+    for (int i = 0; i < MAX_CLIENTS; ++i) {
+        if (clients[i]) {
+            strcat(list_message, clients[i]->name);
+            strcat(list_message, "\n");
+        }
+    }
+    pthread_mutex_unlock(&clients_mutex);
+    send(sockfd, list_message, strlen(list_message), 0);
+}
+
 void send_message(char *s, client_t *cli, int prepend_name) {
     pthread_mutex_lock(&clients_mutex);
     if (cli && cli->room) {
@@ -198,6 +226,7 @@ void *handle_client(void *arg) {
     while (!leave_flag) {
         int receive = recv(cli->sockfd, buff_out, BUFFER_SIZE, 0);
         if (receive > 0) {
+            printf("Received command: %s\n", buff_out); // Log the command
 
             // Strip the client's name from the command
             char *command = strchr(buff_out, ':');
@@ -225,6 +254,14 @@ void *handle_client(void *arg) {
                 }
             } else if (strncmp(command, "/list", 5) == 0) {
                 list_rooms(cli->sockfd);
+            } else if (strncmp(command, "/msg", 4) == 0) {
+                char *target_name = strtok(command + 5, " ");
+                char *private_message = strtok(NULL, "\0");
+                if (target_name && private_message) {
+                    send_private_message(target_name, private_message, cli);
+                }
+            } else if (strncmp(command, "/users", 6) == 0) {
+                list_users(cli->sockfd);
             } else if (cli->room && strlen(command) > 0) {
                 send_message(command, cli, 1);
                 str_trim_lf(command, strlen(command));
