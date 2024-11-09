@@ -7,6 +7,14 @@ room_t *rooms[MAX_ROOMS];
 pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t rooms_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+void send_message(char *s, client_t *cli, int prepend_name);
+void create_room(char *room_name, client_t *cli);
+void join_room(client_t *cli, char *room_name);
+void leave_room(client_t *cli);
+void delete_room(room_t *room);
+void list_rooms(int sockfd);
+void *handle_client(void *arg);
+
 void print_client_addr(struct sockaddr_in addr) {
     printf("%d.%d.%d.%d",
            addr.sin_addr.s_addr & 0xff,
@@ -39,14 +47,7 @@ void queue_remove(int uid) {
     pthread_mutex_unlock(&clients_mutex);
 }
 
-void send_message(char *s, client_t *cli, int prepend_name);
-
-void leave_room(client_t *cli);
-
 void create_room(char *room_name, client_t *cli) {
-    // Leave the current room if the client is in one
-    leave_room(cli);
-
     pthread_mutex_lock(&rooms_mutex);
     for (int i = 0; i < MAX_ROOMS; ++i) {
         if (!rooms[i]) {
@@ -60,12 +61,11 @@ void create_room(char *room_name, client_t *cli) {
             for (int j = 0; j < MAX_CLIENTS; ++j) {
                 rooms[i]->clients[j] = NULL;
             }
-            // Add the client to the new room
             rooms[i]->clients[0] = cli;
             cli->room = rooms[i];
             // Broadcast join message
             char join_message[BUFFER_SIZE];
-            snprintf(join_message, sizeof(join_message), "created and joined\n", cli->name, room_name);
+            snprintf(join_message, sizeof(join_message), "%s has created and joined the room %s\n", cli->name, room_name);
             send_message(join_message, cli, 0);
             break;
         }
@@ -73,22 +73,7 @@ void create_room(char *room_name, client_t *cli) {
     pthread_mutex_unlock(&rooms_mutex);
 }
 
-void delete_room(room_t *room) {
-    pthread_mutex_lock(&rooms_mutex);
-    for (int i = 0; i < MAX_ROOMS; ++i) {
-        if (rooms[i] == room) {
-            free(rooms[i]);
-            rooms[i] = NULL;
-            break;
-        }
-    }
-    pthread_mutex_unlock(&rooms_mutex);
-}
-
 void join_room(client_t *cli, char *room_name) {
-    // Leave the current room if the client is in one
-    leave_room(cli);
-
     pthread_mutex_lock(&rooms_mutex);
     for (int i = 0; i < MAX_ROOMS; ++i) {
         if (rooms[i] && strcmp(rooms[i]->name, room_name) == 0) {
@@ -112,6 +97,7 @@ void join_room(client_t *cli, char *room_name) {
 void leave_room(client_t *cli) {
     if (cli->room) {
         pthread_mutex_lock(&rooms_mutex);
+        printf("Client %s is leaving room %s\n", cli->name, cli->room->name);
         for (int i = 0; i < MAX_CLIENTS; ++i) {
             if (cli->room->clients[i] == cli) {
                 cli->room->clients[i] = NULL;
@@ -130,12 +116,27 @@ void leave_room(client_t *cli) {
                 break;
             }
         }
+        pthread_mutex_unlock(&rooms_mutex);
         if (empty) {
             delete_room(cli->room);
         }
         cli->room = NULL;
-        pthread_mutex_unlock(&rooms_mutex);
     }
+}
+
+void delete_room(room_t *room) {
+    printf("Attempting to delete room: %s\n", room->name);
+    pthread_mutex_lock(&rooms_mutex);
+    for (int i = 0; i < MAX_ROOMS; ++i) {
+        if (rooms[i] == room) {
+            printf("Found room: %s at index %d. Deleting...\n", room->name, i);
+            free(rooms[i]);
+            rooms[i] = NULL;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&rooms_mutex);
+    printf("Room deleted successfully.\n");
 }
 
 void list_rooms(int sockfd) {
@@ -197,6 +198,7 @@ void *handle_client(void *arg) {
     while (!leave_flag) {
         int receive = recv(cli->sockfd, buff_out, BUFFER_SIZE, 0);
         if (receive > 0) {
+
             // Strip the client's name from the command
             char *command = strchr(buff_out, ':');
             if (command) {
@@ -204,9 +206,11 @@ void *handle_client(void *arg) {
             } else {
                 command = buff_out;
             }
+
             if (strncmp(command, "/create", 7) == 0) {
                 char *room_name = strtok(command + 8, " ");
                 if (room_name) {
+                    leave_room(cli);
                     create_room(room_name, cli);
                     snprintf(buff_out, sizeof(buff_out), "Room %s created and joined\n", room_name);
                     send(cli->sockfd, buff_out, strlen(buff_out), 0);
@@ -214,16 +218,17 @@ void *handle_client(void *arg) {
             } else if (strncmp(command, "/join", 5) == 0) {
                 char *room_name = strtok(command + 6, " ");
                 if (room_name) {
+                    leave_room(cli);
                     join_room(cli, room_name);
                     snprintf(buff_out, sizeof(buff_out), "Joined room %s\n", room_name);
                     send(cli->sockfd, buff_out, strlen(buff_out), 0);
-                    printf("%s joined room %s\n", cli->name, room_name);
                 }
             } else if (strncmp(command, "/list", 5) == 0) {
                 list_rooms(cli->sockfd);
             } else if (cli->room && strlen(command) > 0) {
                 send_message(command, cli, 1);
                 str_trim_lf(command, strlen(command));
+                printf("%s -> %s\n", command, cli->name);
             }
         } else if (receive == 0 || strcmp(buff_out, "exit") == 0) {
             snprintf(buff_out, sizeof(buff_out), "%s has left\n", cli->name);
