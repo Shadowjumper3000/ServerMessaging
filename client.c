@@ -3,27 +3,32 @@
 volatile sig_atomic_t flag = 0;
 int sockfd = 0;
 char name[NAME_LEN];
+char current_room[NAME_LEN] = "None";
 
 void catch_ctrl_c_and_exit(int sig) {
     flag = 1;
+}
+
+void str_overwrite_stdout_with_room() {
+    printf("\r[%s]-", current_room);
+    fflush(stdout);
 }
 
 void send_msg_handler() {
     char message[BUFFER_SIZE] = {};
     char buffer[BUFFER_SIZE + NAME_LEN] = {};
     while (1) {
-        str_overwrite_stdout();
+        str_overwrite_stdout_with_room();
         fgets(message, BUFFER_SIZE, stdin);
         str_trim_lf(message, BUFFER_SIZE);
 
         if (strcmp(message, "exit") == 0) {
             break;
         } else {
-            snprintf(buffer, sizeof(buffer), "%s: %s\n", name, message);
+            snprintf(buffer, sizeof(buffer), "%s: %s", name, message);
             if (send(sockfd, buffer, strlen(buffer), 0) == -1) {
                 perror("ERROR: send message failed");
             }
-            if (DEBUG) printf("[DEBUG] Sent message: %s\n", buffer);
         }
         memset(message, 0, BUFFER_SIZE);
         memset(buffer, 0, BUFFER_SIZE + NAME_LEN);
@@ -39,10 +44,27 @@ void recv_msg_handler() {
             perror("ERROR: recv message failed");
             break;
         }
-        if (DEBUG) printf("[DEBUG] Received message: %s\n", message);
         if (receive > 0) {
-            printf("%s", message);
-            str_overwrite_stdout();
+            // Check if the message indicates a room change
+            if (strstr(message, "created and joined")) {
+                sscanf(message, "Room %s created and joined", current_room);
+                printf("Room %s created and joined\n", current_room);
+            } else if (strstr(message, "Joined room")) {
+                sscanf(message, "Joined room %s", current_room);
+                printf("You joined room %s\n", current_room);
+            } else if (strstr(message, "has left the room")) {
+                printf("%s\n", message);
+            } else if (strstr(message, "has joined the room")) {
+                printf("%s\n", message);
+            } else if (strstr(message, "Available rooms")) {
+                // Print available rooms without current room and username
+                printf("%s\n", message);
+            } else {
+                // Print the message
+                printf("%s\n", message);
+            }
+            // Overwrite the prompt after printing the message
+            str_overwrite_stdout_with_room();
         } else if (receive == 0) {
             break;
         }
