@@ -1,6 +1,8 @@
 #ifndef CIPHER_UTIL_H
 #define CIPHER_UTIL_H
 
+#define SHIFT 3
+
 void caesar_encrypt(char *message, int shift) {
     for (int i = 0; message[i] != '\0'; ++i) {
         char c = message[i];

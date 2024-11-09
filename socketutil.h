@@ -22,7 +22,7 @@
 
 #define DEBUG 1
 
-#define PORT 8080
+#define PORT 8088
 #define BUFFER_SIZE 2048
 #define NAME_LEN 32
 #define MAX_CLIENTS 10
