@@ -21,7 +21,6 @@ void str_overwrite_stdout_with_room() {
 
 void send_msg_handler() {
     char message[BUFFER_SIZE] = {};
-    //char buffer[BUFFER_SIZE + NAME_LEN] = {};
     char encrypted_buffer[BUFFER_SIZE*2] = {};
     while (1) {
         str_overwrite_stdout_with_room();
@@ -36,11 +35,11 @@ void send_msg_handler() {
             snprintf(buffer, sizeof(buffer), "%s: %s", name, message);
         }
 
-        //RSA Encryption
+        // RSA Encryption
         int len = strlen(message);
         int encrypted_len = 0;
-        for(int i = 0; i<len; i++){
-            encrypted_len += snprintf(encrypted_buffer + encrypted_len, sizeof(encrypted_buffer) - encrypted_len, "%d ", rsa_encrypt(message[i]));
+        for (int i = 0; i < len; i++) {
+            encrypted_len += snprintf(encrypted_buffer + encrypted_len, sizeof(encrypted_buffer) - encrypted_len, "%d ", encrypt_char(message[i], e, n));
         }
 
         if (send(sockfd, encrypted_buffer, strlen(encrypted_buffer), 0) == -1) {
@@ -66,12 +65,12 @@ void recv_msg_handler() {
 
         if (receive > 0) {
 
-            //RSA decrypt
-            char *token = strtok(encrypted_message. " ");
+            // RSA Decrypt
+            char *token = strtok(encrypted_message, " ");
             int i = 0;
-            while(token != NULL){
+            while (token != NULL) {
                 // Decrypt each token and reconstruct the message
-                decrypted_message[i++] = rsa_decrypt(atoi(token));
+                decrypted_message[i++] = decrypt_char(atoi(token), d, n);
                 token = strtok(NULL, " ");
             }
             decrypted_message[i] = '\0';
@@ -103,14 +102,36 @@ void recv_msg_handler() {
     }
 }
 
+//client public/private keys
+int e, d, n;
+
 int main() {
     signal(SIGINT, catch_ctrl_c_and_exit);
 
-    //RSA Key generation
-    int e, d, n;
-    int p = 61;
-    int q = 53;
-    generate_keys(p, q, &e, &d, &n);
+    // RSA Key generation (client's keys)
+    int p = 61, q = 53;
+    generate_keys(p, q, &e, &d, &n); // Generate client's public and private keys
+
+    // Step 1: Send client's public key to the server
+    int client_public_key[2] = {e, n};
+    if (send(sockfd, client_public_key, sizeof(client_public_key), 0) == -1) {
+        perror("ERROR: send public key failed");
+        return EXIT_FAILURE;
+    }
+
+    // Step 2: Receive server's public key
+    int server_public_key[2];
+    if (recv(sockfd, server_public_key, sizeof(server_public_key), 0) == -1) {
+        perror("ERROR: receive server public key failed");
+        return EXIT_FAILURE;
+    }
+    int e_server = server_public_key[0];
+    int n_server = server_public_key[1];
+
+    // Now we have the server's public key (e_server, n_server)
+    // The server will use this public key to encrypt messages for the client
+    printf("Received server's public key: (e = %d, n = %d)\n", e_server, n_server);
+
 
     printf("Enter your name: ");
     fgets(name, NAME_LEN, stdin);
