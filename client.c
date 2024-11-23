@@ -26,7 +26,6 @@ void str_overwrite_stdout_with_room() {
 
 void send_msg_handler() {
     char message[BUFFER_SIZE] = {};
-    char encrypted_buffer[BUFFER_SIZE * 2] = {};
     char buffer[BUFFER_SIZE];
 
     while (1) {
@@ -42,27 +41,46 @@ void send_msg_handler() {
             snprintf(buffer, sizeof(buffer), "%s: %s", name, message);
         }
 
+        if (DEBUG) printf("Message before encryption: %s\n", buffer);
+
         // RSA Encryption
-        int len = strlen(message);
-        int encrypted_len = 0;
-        for (int i = 0; i < len; i++) {
-            encrypted_len += snprintf(encrypted_buffer + encrypted_len, sizeof(encrypted_buffer) - encrypted_len, "%d ", encrypt_char(message[i], e_server, n_server));
+        int len = strlen(buffer);           // Length of the message
+        int encrypted_message[BUFFER_SIZE]; // Array to hold encrypted message
+
+        // Encrypt the entire message using RSA
+        encrypt_message(buffer, encrypted_message, len, e_server, n_server);
+
+        if (DEBUG) {
+            printf("Encrypted message: ");
+            for (int i = 0; i < len; i++) {
+                printf("%d ", encrypted_message[i]);
+            }
+            printf("\n");
         }
 
+        // Prepare the encrypted message as a space-separated string
+        char encrypted_buffer[BUFFER_SIZE] = {};
+        int encrypted_len = 0;
+        for (int i = 0; i < len; i++) {
+            encrypted_len += snprintf(encrypted_buffer + encrypted_len, sizeof(encrypted_buffer) - encrypted_len, "%d ", encrypted_message[i]);
+        }
+
+        // Send the encrypted message
         if (send(sockfd, encrypted_buffer, strlen(encrypted_buffer), 0) == -1) {
             perror("ERROR: send message failed");
         }
 
         memset(message, 0, sizeof(message));
+        memset(buffer, 0, sizeof(buffer));
         memset(encrypted_buffer, 0, sizeof(encrypted_buffer));
     }
     catch_ctrl_c_and_exit(2);
 }
 
 
+
 void recv_msg_handler() {
     char encrypted_message[BUFFER_SIZE] = {};
-    char decrypted_message[BUFFER_SIZE] = {};
     while (1) {
         int receive = recv(sockfd, encrypted_message, BUFFER_SIZE, 0);
         if (receive == -1) {
@@ -71,15 +89,23 @@ void recv_msg_handler() {
         }
 
         if (receive > 0) {
+            if (DEBUG) printf("Received encrypted message: %s\n", encrypted_message);
 
-            // RSA Decrypt
+            // Parse the encrypted message (space-separated integers)
             char *token = strtok(encrypted_message, " ");
-            int i = 0;
-            while (token != NULL) {
-                decrypted_message[i++] = decrypt_char(atoi(token), d, n);
+            int encrypted_array[BUFFER_SIZE];
+            int len = 0;
+
+            while (token != NULL && len < BUFFER_SIZE) {
+                encrypted_array[len++] = atoi(token);
                 token = strtok(NULL, " ");
             }
-            decrypted_message[i] = '\0';
+
+            // Decrypt the entire message using RSA
+            char decrypted_message[BUFFER_SIZE];
+            decrypt_message(encrypted_array, decrypted_message, len, d, n);  // Use client private key
+
+            if (DEBUG) printf("Decrypted message: %s\n", decrypted_message);
 
             // Handle specific messages
             if (strstr(decrypted_message, "created and joined")) {
@@ -98,9 +124,10 @@ void recv_msg_handler() {
             break;
         }
 
-        memset(decrypted_message, 0, sizeof(decrypted_message));  // Clear the decrypted message
+        memset(encrypted_message, 0, sizeof(encrypted_message));  // Clear the encrypted message buffer
     }
 }
+
 
 int main() {
     signal(SIGINT, catch_ctrl_c_and_exit);

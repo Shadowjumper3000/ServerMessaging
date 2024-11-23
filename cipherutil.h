@@ -116,5 +116,11 @@ void decrypt_message(const int* encrypted_message, char* decrypted_message, int 
     decrypted_message[length] = '\0';  // Null-terminate the decrypted string
 }
 
+// Encrypt a message (array of characters)
+void encrypt_message(const char* message, int* encrypted_message, int length, int e, int n) {
+    for (int i = 0; i < length; i++) {
+        encrypted_message[i] = encrypt_char(message[i], e, n);
+    }
+}
 
 #endif // CIPHER_UTIL_H

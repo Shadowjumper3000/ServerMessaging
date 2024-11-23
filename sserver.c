@@ -159,23 +159,29 @@ void list_rooms(int sockfd) {
 
 void send_private_message(char *target_name, char *message, client_t *cli) {
     pthread_mutex_lock(&clients_mutex);
+
+    // Look for the target client
     for (int i = 0; i < MAX_CLIENTS; ++i) {
         if (clients[i] && strcmp(clients[i]->name, target_name) == 0) {
+            // Construct the private message
             char private_message[BUFFER_SIZE + NAME_LEN];
             snprintf(private_message, sizeof(private_message), "[Private] %s: %s", cli->name, message);
 
-            //RSA Encrypt
-            int encrypted_message[BUFFER_SIZE];
-            for (int i = 0; i < strlen(private_message); ++i) {
-                encrypted_message[i] = encrypt_char(private_message[i], e_client, n_client);  // RSA Encryption
-            }
+            // RSA Encryption
+            int len = strlen(message);  // Length of the message
+            int encrypted_message[len]; // Array to hold encrypted message
 
-            if (send(clients[i]->sockfd, (char*)encrypted_message, sizeof(encrypted_message), 0) < 0) {
+            // Encrypt the entire message using RSA
+            encrypt_message(message, encrypted_message, len, e_client, n_client);
+
+            // Send the encrypted message to the target client
+            if (send(clients[i]->sockfd, (char*)encrypted_message, len * sizeof(int), 0) < 0) {
                 perror("ERROR: send to descriptor failed");
             }
             break;
         }
     }
+
     pthread_mutex_unlock(&clients_mutex);
 }
 
@@ -246,19 +252,23 @@ void *handle_client(void *arg) {
     while (!leave_flag) {
         int receive = recv(cli->sockfd, buff_out, BUFFER_SIZE, 0);
         if (receive > 0) {
+            if (DEBUG) printf("Received encrypted message: %s\n", buff_out);
 
-            if (DEBUG)printf("Received encrypted message: %s\n", buff_out);
-            // Decrypt the received message
-            char decrypted_message[BUFFER_SIZE];
-            for (int i = 0; i < receive; i++) {
-                decrypted_message[i] = decrypt_char(buff_out[i], d, n); // Decrypt each character
+            // Parse encrypted message (space-separated integers)
+            char *token = strtok(buff_out, " ");
+            int encrypted_message[BUFFER_SIZE];
+            int len = 0;
+
+            while (token != NULL && len < BUFFER_SIZE) {
+                encrypted_message[len++] = atoi(token);
+                token = strtok(NULL, " ");
             }
 
-            // Null-terminate the decrypted message
-            decrypted_message[receive] = '\0';
-            if(DEBUG)printf("Decrypted message: %s\n", decrypted_message); // Log the decrypted message
+            // Decrypt the entire message using RSA
+            char decrypted_message[BUFFER_SIZE];
+            decrypt_message(encrypted_message, decrypted_message, len, d, n);  // Use server's private key
 
-            printf("Received command: %s\n", buff_out); // Log the command
+            if (DEBUG) printf("Decrypted message: %s\n", decrypted_message);
 
             // Strip the client's name from the command
             char *command = strchr(decrypted_message, ':');
@@ -319,6 +329,7 @@ void *handle_client(void *arg) {
     pthread_detach(pthread_self());
     return NULL;
 }
+
 
 int main() {
     int option = 1;
