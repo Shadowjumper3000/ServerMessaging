@@ -174,7 +174,7 @@ void send_private_message(char *target_name, char *message, client_t *cli) {
                 encrypted_message[i] = encrypt_char(private_message[i], e, n);  // RSA Encryption
             }
 
-            if (send(clients[i]->sockfd, encrypted_message, sizeof(encrypted_message), 0) < 0) {
+            if (send(clients[i]->sockfd, (char*)encrypted_message, sizeof(encrypted_message), 0) < 0) {
                 perror("ERROR: send to descriptor failed");
             }
             break;
@@ -217,7 +217,7 @@ void send_message(char *s, client_t *cli, int prepend_name) {
 
                 //RSA encrypt
 
-                if (send(cli->room->clients[i]->sockfd, encrypted_message, sizeof(encrypted_message), 0) < 0) {
+                if (send(cli->room->clients[i]->sockfd, (char*)encrypted_message, sizeof(encrypted_message), 0) < 0) {
                     perror("ERROR: send to descriptor failed");
                     break;
                 }
@@ -335,15 +335,14 @@ int main() {
     // Print server's public key for debugging
     printf("Server's Public Key: (e = %d, n = %d)\n", e_server, n_server);
 
-
     // Initialize Winsock (Windows only)
-    #ifdef _WIN32
+#ifdef _WIN32
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
         printf("Failed. Error Code : %d\n", WSAGetLastError());
         return EXIT_FAILURE;
     }
-    #endif
+#endif
 
     // Socket settings
     listenfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -358,17 +357,17 @@ int main() {
     serv_addr.sin_port = htons(PORT);
 
     // Ignore pipe signals (Linux only)
-    #ifndef _WIN32
+#ifndef _WIN32
     signal(SIGPIPE, SIG_IGN);
-    #endif
+#endif
 
     // Set socket options
     if (setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, (char *)&option, sizeof(option)) < 0) {
-        #ifdef _WIN32
+#ifdef _WIN32
         printf("ERROR: setsockopt failed: %d\n", WSAGetLastError());
-        #else
+#else
         perror("ERROR: setsockopt failed");
-        #endif
+#endif
         return EXIT_FAILURE;
     }
     printf("Socket options set successfully.\n");
@@ -414,9 +413,11 @@ int main() {
         cli->uid = uid++;
         cli->room = NULL;
 
+
         // Step 1: Send server's public key to the client
         int server_public_key[2] = {e_server, n_server};  // Server's public key
-        if (send(connfd, server_public_key, sizeof(server_public_key), 0) == -1) {
+        // Send the public key array as a byte stream (cast to char* and send sizeof the byte array)
+        if (send(connfd, (char*)server_public_key, sizeof(server_public_key), 0) == -1) {
             perror("ERROR: send server public key failed");
             close(connfd);
             free(cli);
@@ -426,7 +427,7 @@ int main() {
 
         // Step 2: Receive client's public key
         int client_public_key[2];
-        if (recv(connfd, client_public_key, sizeof(client_public_key), 0) == -1) {
+        if (recv(connfd, (char*)client_public_key, sizeof(client_public_key), 0) == -1) {
             perror("ERROR: receive client public key failed");
             close(connfd);
             free(cli);
@@ -445,10 +446,9 @@ int main() {
         usleep(100000); // Sleep for 100 milliseconds
     }
 
-    // Cleanup Winsock (Windows only)
-    #ifdef _WIN32
+#ifdef _WIN32
     WSACleanup();
-    #endif
+#endif
 
     return EXIT_SUCCESS;
 }

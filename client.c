@@ -5,6 +5,10 @@
 #include <string.h>
 #include <math.h>
 
+//client public/private keys
+int e, d, n;
+
+
 volatile sig_atomic_t flag = 0;
 int sockfd = 0;
 char name[NAME_LEN];
@@ -21,7 +25,9 @@ void str_overwrite_stdout_with_room() {
 
 void send_msg_handler() {
     char message[BUFFER_SIZE] = {};
-    char encrypted_buffer[BUFFER_SIZE*2] = {};
+    char encrypted_buffer[BUFFER_SIZE * 2] = {};
+    char buffer[BUFFER_SIZE];
+
     while (1) {
         str_overwrite_stdout_with_room();
         fgets(message, BUFFER_SIZE, stdin);
@@ -46,14 +52,14 @@ void send_msg_handler() {
             perror("ERROR: send message failed");
         }
 
-        memset(message, 0, BUFFER_SIZE);
-        memset(buffer, 0, encrypted_buffer);
+        memset(message, 0, sizeof(message));
+        memset(encrypted_buffer, 0, sizeof(encrypted_buffer));
     }
     catch_ctrl_c_and_exit(2);
 }
 
+
 void recv_msg_handler() {
-//    char message[BUFFER_SIZE] = {};
     char encrypted_message[BUFFER_SIZE] = {};
     char decrypted_message[BUFFER_SIZE] = {};
     while (1) {
@@ -69,41 +75,31 @@ void recv_msg_handler() {
             char *token = strtok(encrypted_message, " ");
             int i = 0;
             while (token != NULL) {
-                // Decrypt each token and reconstruct the message
                 decrypted_message[i++] = decrypt_char(atoi(token), d, n);
                 token = strtok(NULL, " ");
             }
             decrypted_message[i] = '\0';
 
-            // Check if the message indicates a room change
+            // Handle specific messages
             if (strstr(decrypted_message, "created and joined")) {
                 sscanf(decrypted_message, "Room %s created and joined", current_room);
                 printf("Room %s created and joined\n", current_room);
             } else if (strstr(decrypted_message, "Joined room")) {
                 sscanf(decrypted_message, "Joined room %s", current_room);
                 printf("You joined room %s\n", current_room);
-            } else if (strstr(decrypted_message, "has left the room")) {
-                printf("%s\n", decrypted_message);
-            } else if (strstr(decrypted_message, "has joined the room")) {
-                printf("%s\n", decrypted_message);
-            } else if (strstr(decrypted_message, "Available rooms")) {
-                // Print available rooms without current room and username
-                printf("%s\n", decrypted_message);
             } else {
-                // Print the message
-                printf("%s\n", decrypted_message);
+                printf("%s\n", decrypted_message);  // Display the message
             }
+
             // Overwrite the prompt after printing the message
             str_overwrite_stdout_with_room();
         } else if (receive == 0) {
             break;
         }
-        memset(message, 0, sizeof(decrypted_message));
+
+        memset(decrypted_message, 0, sizeof(decrypted_message));  // Clear the decrypted message
     }
 }
-
-//client public/private keys
-int e, d, n;
 
 int main() {
     signal(SIGINT, catch_ctrl_c_and_exit);
@@ -111,26 +107,6 @@ int main() {
     // RSA Key generation (client's keys)
     int p = 61, q = 53;
     generate_keys(p, q, &e, &d, &n); // Generate client's public and private keys
-
-    // Step 1: Send client's public key to the server
-    int client_public_key[2] = {e, n};
-    if (send(sockfd, client_public_key, sizeof(client_public_key), 0) == -1) {
-        perror("ERROR: send public key failed");
-        return EXIT_FAILURE;
-    }
-
-    // Step 2: Receive server's public key
-    int server_public_key[2];
-    if (recv(sockfd, server_public_key, sizeof(server_public_key), 0) == -1) {
-        perror("ERROR: receive server public key failed");
-        return EXIT_FAILURE;
-    }
-    int e_server = server_public_key[0];
-    int n_server = server_public_key[1];
-
-    // Now we have the server's public key (e_server, n_server)
-    // The server will use this public key to encrypt messages for the client
-    printf("Received server's public key: (e = %d, n = %d)\n", e_server, n_server);
 
 
     printf("Enter your name: ");
@@ -186,6 +162,26 @@ int main() {
         return EXIT_FAILURE;
     }
     if (DEBUG) printf("[DEBUG] Connected to server\n");
+
+    // Step 1: Send client's public key to the server
+    int client_public_key[2] = {e, n};
+    if (send(sockfd, (char *)client_public_key, sizeof(client_public_key), 0) == -1) {
+        perror("ERROR: send public key failed");
+        return EXIT_FAILURE;
+    }
+
+    // Step 2: Receive server's public key
+    int server_public_key[2];
+    if (recv(sockfd, (char *)server_public_key, sizeof(server_public_key), 0) == -1) {
+        perror("ERROR: receive server public key failed");
+        return EXIT_FAILURE;
+    }
+    int e_server = server_public_key[0];
+    int n_server = server_public_key[1];
+
+    // Now we have the server's public key (e_server, n_server)
+    // The server will use this public key to encrypt messages for the client
+    printf("Received server's public key: (e = %d, n = %d)\n", e_server, n_server);
 
     // Send name
     if (send(sockfd, name, NAME_LEN, 0) == -1) {
