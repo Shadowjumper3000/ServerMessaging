@@ -7,6 +7,7 @@
 
 //client public/private keys
 int e, d, n;
+int e_server, n_server;
 
 
 volatile sig_atomic_t flag = 0;
@@ -45,7 +46,7 @@ void send_msg_handler() {
         int len = strlen(message);
         int encrypted_len = 0;
         for (int i = 0; i < len; i++) {
-            encrypted_len += snprintf(encrypted_buffer + encrypted_len, sizeof(encrypted_buffer) - encrypted_len, "%d ", encrypt_char(message[i], e, n));
+            encrypted_len += snprintf(encrypted_buffer + encrypted_len, sizeof(encrypted_buffer) - encrypted_len, "%d ", encrypt_char(message[i], e_server, n_server));
         }
 
         if (send(sockfd, encrypted_buffer, strlen(encrypted_buffer), 0) == -1) {
@@ -176,12 +177,12 @@ int main() {
         perror("ERROR: receive server public key failed");
         return EXIT_FAILURE;
     }
-    int e_server = server_public_key[0];
-    int n_server = server_public_key[1];
+    e_server = server_public_key[0];
+    n_server = server_public_key[1];
 
     // Now we have the server's public key (e_server, n_server)
     // The server will use this public key to encrypt messages for the client
-    printf("Received server's public key: (e = %d, n = %d)\n", e_server, n_server);
+    if (DEBUG) printf("Received server's public key: (e = %d, n = %d)\n", e_server, n_server);
 
     // Send name
     if (send(sockfd, name, NAME_LEN, 0) == -1) {

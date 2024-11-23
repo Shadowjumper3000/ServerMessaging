@@ -53,6 +53,7 @@ void str_trim_lf(char* arr, int length) {
             break;
         }
     }
+
 }
 
 #endif // SOCKET_UTIL_H

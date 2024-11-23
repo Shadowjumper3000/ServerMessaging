@@ -8,13 +8,9 @@ room_t *rooms[MAX_ROOMS];
 pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t rooms_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-//RSA keys for server
+//server public/private keys
 int e, d, n;
-
-void generate_server_keys(){
-    int p = 61, q = 53;
-    generate_server_keys(p, q, &e, &d, &n);
-}
+int e_client, n_client;
 
 void send_message(char *s, client_t *cli, int prepend_name);
 void create_room(char *room_name, client_t *cli);
@@ -171,7 +167,7 @@ void send_private_message(char *target_name, char *message, client_t *cli) {
             //RSA Encrypt
             int encrypted_message[BUFFER_SIZE];
             for (int i = 0; i < strlen(private_message); ++i) {
-                encrypted_message[i] = encrypt_char(private_message[i], e, n);  // RSA Encryption
+                encrypted_message[i] = encrypt_char(private_message[i], e_client, n_client);  // RSA Encryption
             }
 
             if (send(clients[i]->sockfd, (char*)encrypted_message, sizeof(encrypted_message), 0) < 0) {
@@ -209,13 +205,11 @@ void send_message(char *s, client_t *cli, int prepend_name) {
         //Encrypt message
         int encrypted_message[BUFFER_SIZE];
         for (int i = 0; i < strlen(message); ++i) {
-            encrypted_message[i] = encrypt_char(message[i], e, n);  // RSA Encryption
+            encrypted_message[i] = encrypt_char(message[i], e_client, n);  // RSA Encryption
         }
 
         for (int i = 0; i < MAX_CLIENTS; ++i) {
             if (cli->room->clients[i] && cli->room->clients[i]->uid != cli->uid) {
-
-                //RSA encrypt
 
                 if (send(cli->room->clients[i]->sockfd, (char*)encrypted_message, sizeof(encrypted_message), 0) < 0) {
                     perror("ERROR: send to descriptor failed");
@@ -236,9 +230,6 @@ void *handle_client(void *arg) {
     client_count++;
     client_t *cli = (client_t *)arg;
 
-    //Generate Keys
-    generate_server_keys();
-
     // Receive name
     if (recv(cli->sockfd, name, 32, 0) <= 0 || strlen(name) < 2 || strlen(name) >= 32 - 1) {
         printf("Didn't enter the name.\n");
@@ -255,14 +246,26 @@ void *handle_client(void *arg) {
     while (!leave_flag) {
         int receive = recv(cli->sockfd, buff_out, BUFFER_SIZE, 0);
         if (receive > 0) {
+
+            if (DEBUG)printf("Received encrypted message: %s\n", buff_out);
+            // Decrypt the received message
+            char decrypted_message[BUFFER_SIZE];
+            for (int i = 0; i < receive; i++) {
+                decrypted_message[i] = decrypt_char(buff_out[i], d, n); // Decrypt each character
+            }
+
+            // Null-terminate the decrypted message
+            decrypted_message[receive] = '\0';
+            if(DEBUG)printf("Decrypted message: %s\n", decrypted_message); // Log the decrypted message
+
             printf("Received command: %s\n", buff_out); // Log the command
 
             // Strip the client's name from the command
-            char *command = strchr(buff_out, ':');
+            char *command = strchr(decrypted_message, ':');
             if (command) {
                 command += 2; // Skip ": "
             } else {
-                command = buff_out;
+                command = decrypted_message;
             }
 
             if (strncmp(command, "/create", 7) == 0) {
@@ -317,10 +320,6 @@ void *handle_client(void *arg) {
     return NULL;
 }
 
-
-//server public/private keys
-int e_server, d_server, n_server;
-
 int main() {
     int option = 1;
     int listenfd = 0, connfd = 0;
@@ -330,10 +329,10 @@ int main() {
 
     // RSA Key generation (server's keys)
     int p_server = 61, q_server = 53;
-    generate_keys(p_server, q_server, &e_server, &d_server, &n_server);  // Generate server's public/private keys
+    generate_keys(p_server, q_server, &e, &d, &n);  // Generate server's public/private keys
 
     // Print server's public key for debugging
-    printf("Server's Public Key: (e = %d, n = %d)\n", e_server, n_server);
+    printf("Server's Public Key: (e = %d, n = %d)\n", e, d);
 
     // Initialize Winsock (Windows only)
 #ifdef _WIN32
@@ -415,7 +414,7 @@ int main() {
 
 
         // Step 1: Send server's public key to the client
-        int server_public_key[2] = {e_server, n_server};  // Server's public key
+        int server_public_key[2] = {e, n};  // Server's public key
         // Send the public key array as a byte stream (cast to char* and send sizeof the byte array)
         if (send(connfd, (char*)server_public_key, sizeof(server_public_key), 0) == -1) {
             perror("ERROR: send server public key failed");
@@ -423,7 +422,7 @@ int main() {
             free(cli);
             continue;
         }
-        printf("Sent server's public key to client.\n");
+        if (DEBUG) printf("Sent server's public key to client.\n");
 
         // Step 2: Receive client's public key
         int client_public_key[2];
@@ -433,9 +432,9 @@ int main() {
             free(cli);
             continue;
         }
-        int e_client = client_public_key[0];
-        int n_client = client_public_key[1];
-        printf("Received client's public key: (e = %d, n = %d)\n", e_client, n_client);
+        e_client = client_public_key[0];
+        n_client = client_public_key[1];
+        if (DEBUG) printf("Received client's public key: (e = %d, n = %d)\n", e_client, n_client);
 
 
         // Add client to the queue and fork thread
