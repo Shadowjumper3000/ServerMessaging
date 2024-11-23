@@ -158,6 +158,9 @@ void send_private_message(char *target_name, char *message, client_t *cli) {
         if (clients[i] && strcmp(clients[i]->name, target_name) == 0) {
             char private_message[BUFFER_SIZE + NAME_LEN];
             snprintf(private_message, sizeof(private_message), "[Private] %s: %s", cli->name, message);
+
+            //RSA Encrypt
+
             if (send(clients[i]->sockfd, private_message, strlen(private_message), 0) < 0) {
                 perror("ERROR: send to descriptor failed");
             }
@@ -191,6 +194,9 @@ void send_message(char *s, client_t *cli, int prepend_name) {
         }
         for (int i = 0; i < MAX_CLIENTS; ++i) {
             if (cli->room->clients[i] && cli->room->clients[i]->uid != cli->uid) {
+
+                //RSA encrypt
+
                 if (send(cli->room->clients[i]->sockfd, message, strlen(message), 0) < 0) {
                     perror("ERROR: send to descriptor failed");
                     break;

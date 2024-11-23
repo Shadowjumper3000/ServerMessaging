@@ -1,4 +1,9 @@
 #include "socketutil.h"
+#include "cipherutil.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
 
 volatile sig_atomic_t flag = 0;
 int sockfd = 0;
@@ -16,7 +21,8 @@ void str_overwrite_stdout_with_room() {
 
 void send_msg_handler() {
     char message[BUFFER_SIZE] = {};
-    char buffer[BUFFER_SIZE + NAME_LEN] = {};
+    //char buffer[BUFFER_SIZE + NAME_LEN] = {};
+    char encrypted_buffer[BUFFER_SIZE*2] = {};
     while (1) {
         str_overwrite_stdout_with_room();
         fgets(message, BUFFER_SIZE, stdin);
@@ -30,54 +36,81 @@ void send_msg_handler() {
             snprintf(buffer, sizeof(buffer), "%s: %s", name, message);
         }
 
-        if (send(sockfd, buffer, strlen(buffer), 0) == -1) {
+        //RSA Encryption
+        int len = strlen(message);
+        int encrypted_len = 0;
+        for(int i = 0; i<len; i++){
+            encrypted_len += snprintf(encrypted_buffer + encrypted_len, sizeof(encrypted_buffer) - encrypted_len, "%d ", rsa_encrypt(message[i]));
+        }
+
+        if (send(sockfd, encrypted_buffer, strlen(encrypted_buffer), 0) == -1) {
             perror("ERROR: send message failed");
         }
 
         memset(message, 0, BUFFER_SIZE);
-        memset(buffer, 0, BUFFER_SIZE + NAME_LEN);
+        memset(buffer, 0, encrypted_buffer);
     }
     catch_ctrl_c_and_exit(2);
 }
 
 void recv_msg_handler() {
-    char message[BUFFER_SIZE] = {};
+//    char message[BUFFER_SIZE] = {};
+    char encrypted_message[BUFFER_SIZE] = {};
+    char decrypted_message[BUFFER_SIZE] = {};
     while (1) {
-        int receive = recv(sockfd, message, BUFFER_SIZE, 0);
+        int receive = recv(sockfd, encrypted_message, BUFFER_SIZE, 0);
         if (receive == -1) {
             perror("ERROR: recv message failed");
             break;
         }
+
         if (receive > 0) {
+
+            //RSA decrypt
+            char *token = strtok(encrypted_message. " ");
+            int i = 0;
+            while(token != NULL){
+                // Decrypt each token and reconstruct the message
+                decrypted_message[i++] = rsa_decrypt(atoi(token));
+                token = strtok(NULL, " ");
+            }
+            decrypted_message[i] = '\0';
+
             // Check if the message indicates a room change
-            if (strstr(message, "created and joined")) {
-                sscanf(message, "Room %s created and joined", current_room);
+            if (strstr(decrypted_message, "created and joined")) {
+                sscanf(decrypted_message, "Room %s created and joined", current_room);
                 printf("Room %s created and joined\n", current_room);
-            } else if (strstr(message, "Joined room")) {
-                sscanf(message, "Joined room %s", current_room);
+            } else if (strstr(decrypted_message, "Joined room")) {
+                sscanf(decrypted_message, "Joined room %s", current_room);
                 printf("You joined room %s\n", current_room);
-            } else if (strstr(message, "has left the room")) {
-                printf("%s\n", message);
-            } else if (strstr(message, "has joined the room")) {
-                printf("%s\n", message);
-            } else if (strstr(message, "Available rooms")) {
+            } else if (strstr(decrypted_message, "has left the room")) {
+                printf("%s\n", decrypted_message);
+            } else if (strstr(decrypted_message, "has joined the room")) {
+                printf("%s\n", decrypted_message);
+            } else if (strstr(decrypted_message, "Available rooms")) {
                 // Print available rooms without current room and username
-                printf("%s\n", message);
+                printf("%s\n", decrypted_message);
             } else {
                 // Print the message
-                printf("%s\n", message);
+                printf("%s\n", decrypted_message);
             }
             // Overwrite the prompt after printing the message
             str_overwrite_stdout_with_room();
         } else if (receive == 0) {
             break;
         }
-        memset(message, 0, sizeof(message));
+        memset(message, 0, sizeof(decrypted_message));
     }
 }
 
 int main() {
     signal(SIGINT, catch_ctrl_c_and_exit);
+
+    //RSA Key generation
+    int e, d, n;
+    int p = 61;
+    int q = 53;
+    generate_keys(p, q, &e, &d, &n);
 
     printf("Enter your name: ");
     fgets(name, NAME_LEN, stdin);
