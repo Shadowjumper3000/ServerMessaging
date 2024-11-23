@@ -41,7 +41,7 @@ void send_msg_handler() {
             snprintf(buffer, sizeof(buffer), "%s: %s", name, message);
         }
 
-        if (DEBUG) printf("Message before encryption: %s\n", buffer);
+        if (DEBUG) printf("[DEBUG]Message before encryption: %s\n", buffer);
 
         // RSA Encryption
         int len = strlen(buffer);           // Length of the message
@@ -51,7 +51,7 @@ void send_msg_handler() {
         encrypt_message(buffer, encrypted_message, len, e_server, n_server);
 
         if (DEBUG) {
-            printf("Encrypted message: ");
+            printf("[DEBUG]Encrypted message: ");
             for (int i = 0; i < len; i++) {
                 printf("%d ", encrypted_message[i]);
             }
@@ -89,7 +89,7 @@ void recv_msg_handler() {
         }
 
         if (receive > 0) {
-            if (DEBUG) printf("Received encrypted message: %s\n", encrypted_message);
+            if (DEBUG) printf("[DEBUG]Received encrypted message: %s\n", encrypted_message);
 
             // Parse the encrypted message (space-separated integers)
             char *token = strtok(encrypted_message, " ");
@@ -105,7 +105,7 @@ void recv_msg_handler() {
             char decrypted_message[BUFFER_SIZE];
             decrypt_message(encrypted_array, decrypted_message, len, d, n);  // Use client private key
 
-            if (DEBUG) printf("Decrypted message: %s\n", decrypted_message);
+            if (DEBUG) printf("[DEBUG]Decrypted message: %s\n", decrypted_message);
 
             // Handle specific messages
             if (strstr(decrypted_message, "created and joined")) {
@@ -209,7 +209,7 @@ int main() {
 
     // Now we have the server's public key (e_server, n_server)
     // The server will use this public key to encrypt messages for the client
-    if (DEBUG) printf("Received server's public key: (e = %d, n = %d)\n", e_server, n_server);
+    if (DEBUG) printf("[DEBUG]Received server's public key: (e = %d, n = %d)\n", e_server, n_server);
 
     // Send name
     if (send(sockfd, name, NAME_LEN, 0) == -1) {

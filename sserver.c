@@ -252,7 +252,7 @@ void *handle_client(void *arg) {
     while (!leave_flag) {
         int receive = recv(cli->sockfd, buff_out, BUFFER_SIZE, 0);
         if (receive > 0) {
-            if (DEBUG) printf("Received encrypted message: %s\n", buff_out);
+            if (DEBUG) printf("[DEBUG]Received encrypted message: %s\n", buff_out);
 
             // Parse encrypted message (space-separated integers)
             char *token = strtok(buff_out, " ");
@@ -268,7 +268,7 @@ void *handle_client(void *arg) {
             char decrypted_message[BUFFER_SIZE];
             decrypt_message(encrypted_message, decrypted_message, len, d, n);  // Use server's private key
 
-            if (DEBUG) printf("Decrypted message: %s\n", decrypted_message);
+            if (DEBUG) printf("[DEBUG]Decrypted message: %s\n", decrypted_message);
 
             // Strip the client's name from the command
             char *command = strchr(decrypted_message, ':');
@@ -343,7 +343,7 @@ int main() {
     generate_keys(p_server, q_server, &e, &d, &n);  // Generate server's public/private keys
 
     // Print server's public key for debugging
-    printf("Server's Public Key: (e = %d, n = %d)\n", e, d);
+    if (DEBUG) printf("[DEBUG]Server's Public Key: (e = %d, n = %d)\n", e, d);
 
     // Initialize Winsock (Windows only)
 #ifdef _WIN32
@@ -433,7 +433,7 @@ int main() {
             free(cli);
             continue;
         }
-        if (DEBUG) printf("Sent server's public key to client.\n");
+        if (DEBUG) printf("[DEBUG]Sent server's public key to client.\n");
 
         // Step 2: Receive client's public key
         int client_public_key[2];
@@ -445,7 +445,7 @@ int main() {
         }
         e_client = client_public_key[0];
         n_client = client_public_key[1];
-        if (DEBUG) printf("Received client's public key: (e = %d, n = %d)\n", e_client, n_client);
+        if (DEBUG) printf("[DEBUG]Received client's public key: (e = %d, n = %d)\n", e_client, n_client);
 
 
         // Add client to the queue and fork thread
