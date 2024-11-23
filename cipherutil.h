@@ -51,26 +51,33 @@ int mod_exp(int base, int exp, int mod) {
     return result;
 }
 
-// Extended Euclidean algorithm to find modular inverse of e (finds d)
 int mod_inverse(int e, int phi) {
     int t = 0, new_t = 1;
     int r = phi, new_r = e;
 
-    while(new_r != 0) {
+    while (new_r != 0) {
         int quotient = r / new_r;
 
+        int temp_t = t;
         t = new_t;
-        new_t = t - quotient * new_t;
+        new_t = temp_t - quotient * new_t;
 
+        int temp_r = r;
         r = new_r;
-        new_r = r - quotient * new_r;
+        new_r = temp_r - quotient * new_r;
     }
 
-    if(r > 1) return -1;  // No inverse exists
-    if(t < 0) t = t + phi;
+    if (r > 1) {
+        return -1;  // No modular inverse exists
+    }
+
+    if (t < 0) {
+        t = t + phi;
+    }
 
     return t;
 }
+
 
 // Generate RSA public and private keys
 void generate_keys(int p, int q, int* e, int* d, int* n) {

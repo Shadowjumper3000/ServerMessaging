@@ -105,7 +105,7 @@ int main() {
     signal(SIGINT, catch_ctrl_c_and_exit);
 
     // RSA Key generation (client's keys)
-    int p = 61, q = 53;
+    int p = 7, q = 11;
     generate_keys(p, q, &e, &d, &n); // Generate client's public and private keys
 
 
