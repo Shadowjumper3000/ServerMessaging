@@ -27,62 +27,48 @@ void str_overwrite_stdout_with_room() {
 void send_msg_handler() {
     char message[BUFFER_SIZE] = {};
     char buffer[BUFFER_SIZE];
-    char encrypted_buffer[BUFFER_SIZE*2] = {};
 
     while (1) {
         str_overwrite_stdout_with_room();
         fgets(message, BUFFER_SIZE, stdin);
         str_trim_lf(message, BUFFER_SIZE);
 
-        int commandPresent = 1;
-
         if (strcmp(message, "exit") == 0) {
             break;
         } else if (strncmp(message, "/msg", 4) == 0 || strncmp(message, "/users", 6) == 0) {
             snprintf(buffer, sizeof(buffer), "%s", message);
         } else {
-            commandPresent = 0;
             snprintf(buffer, sizeof(buffer), "%s: %s", name, message);
         }
 
+        if (DEBUG) printf("[DEBUG]Message before encryption: %s\n", buffer);
 
-        if(commandPresent == 0){
-            if (DEBUG) printf("[DEBUG]Message before encryption: %s\n", buffer);
+        // RSA Encryption
+        int len = strlen(buffer);           // Length of the message
+        int encrypted_message[BUFFER_SIZE]; // Array to hold encrypted message
 
-            // RSA Encryption
-            int len = strlen(buffer);           // Length of the message
-            int encrypted_message[BUFFER_SIZE*2]; // Array to hold encrypted message
+        // Encrypt the entire message using RSA
+        encrypt_message(buffer, encrypted_message, len, e_server, n_server);
 
-            // Encrypt the entire message using RSA
-            encrypt_message(buffer, encrypted_message, len, e_server, n_server);
-
-            if (DEBUG) {
-                printf("[DEBUG]Encrypted message: ");
-                for (int i = 0; i < len; i++) {
-                    printf("%d ", encrypted_message[i]);
-                }
-                printf("\n");
-            }
-
-            // Prepare the encrypted message as a space-separated string
-            int encrypted_len = 0;
+        if (DEBUG) {
+            printf("[DEBUG]Encrypted message: ");
             for (int i = 0; i < len; i++) {
-                encrypted_len += snprintf(encrypted_buffer + encrypted_len, sizeof(encrypted_buffer) - encrypted_len, "%d ", encrypted_message[i]);
+                printf("%d ", encrypted_message[i]);
             }
-
-            // Send the encrypted message
-            if (send(sockfd, encrypted_buffer, strlen(encrypted_buffer), 0) == -1) {
-                perror("ERROR: send message failed");
-            }
-        } else {
-            if (DEBUG) printf("[DEBUG] Unencrypted command is being sent");
-            // Send the command message unencrypted
-            if (send(sockfd, buffer, strlen(buffer), 0) == -1) {
-                perror("ERROR: send message failed");
-            }
+            printf("\n");
         }
 
+        // Prepare the encrypted message as a space-separated string
+        char encrypted_buffer[BUFFER_SIZE] = {};
+        int encrypted_len = 0;
+        for (int i = 0; i < len; i++) {
+            encrypted_len += snprintf(encrypted_buffer + encrypted_len, sizeof(encrypted_buffer) - encrypted_len, "%d ", encrypted_message[i]);
+        }
 
+        // Send the encrypted message
+        if (send(sockfd, encrypted_buffer, strlen(encrypted_buffer), 0) == -1) {
+            perror("ERROR: send message failed");
+        }
 
         memset(message, 0, sizeof(message));
         memset(buffer, 0, sizeof(buffer));
@@ -94,44 +80,47 @@ void send_msg_handler() {
 
 
 void recv_msg_handler() {
-    char encrypted_message[BUFFER_SIZE] = {};
+    int encrypted_array[BUFFER_SIZE];  // Array to hold encrypted message
     while (1) {
-        int receive = recv(sockfd, encrypted_message, BUFFER_SIZE, 0);
+        // Receive the encrypted message as raw bytes, cast to char* for recv
+        int receive = recv(sockfd, (char *)encrypted_array, sizeof(encrypted_array), 0);
+
         if (receive == -1) {
             perror("ERROR: recv message failed");
             break;
         }
 
         if (receive > 0) {
-            // Handle specific messages //first check if its just an unencrypted command
-            if (strstr(encrypted_message, "created and joined")) {
-                sscanf(encrypted_message, "Room %s created and joined", current_room);
+            if (DEBUG) {
+                printf("[DEBUG]Received encrypted message: ");
+                // Print the received message as integers
+                for (int i = 0; i < receive / sizeof(int); i++) {
+                    printf("%d ", encrypted_array[i]);
+                }
+                printf("\n");
+            }
+
+            // Handle specific messages, first check if it's a room-related message
+            if (strstr((char *)encrypted_array, "created and joined")) {
+                // In case the encrypted message contains the room creation info
+                sscanf((char *)encrypted_array, "Room %s created and joined", current_room);
                 printf("Room %s created and joined\n", current_room);
-            } else if (strstr(encrypted_message, "Joined room")) {
-                sscanf(encrypted_message, "Joined room %s", current_room);
+            } else if (strstr((char *)encrypted_array, "Joined room")) {
+                // If the encrypted message contains the room joining info
+                sscanf((char *)encrypted_array, "Joined room %s", current_room);
                 printf("You joined room %s\n", current_room);
             } else {
-
-                if (DEBUG) printf("[DEBUG]Received encrypted message: %s\n", encrypted_message);
-
-                // Parse the encrypted message (space-separated integers)
-                char *token = strtok(encrypted_message, " ");
-                int encrypted_array[BUFFER_SIZE];
-                int len = 0;
-
-                while (token != NULL && len < BUFFER_SIZE) {
-                    encrypted_array[len++] = atoi(token);
-                    token = strtok(NULL, " ");
-                }
-
                 // Decrypt the entire message using RSA
                 char decrypted_message[BUFFER_SIZE];
+                int len = receive / sizeof(int);  // Number of integers in the array
+
                 decrypt_message(encrypted_array, decrypted_message, len, d, n);  // Use client private key
 
-                if (DEBUG) printf("[DEBUG]Decrypted message: %s\n", decrypted_message);
+                if (DEBUG) {
+                    printf("[DEBUG] Decrypted message: %s\n", decrypted_message);
+                }
 
-
-                printf("%s\n", decrypted_message);  // Display the message
+                printf("%s\n", decrypted_message);  // Display the decrypted message
             }
 
             // Overwrite the prompt after printing the message
@@ -140,7 +129,7 @@ void recv_msg_handler() {
             break;
         }
 
-        memset(encrypted_message, 0, sizeof(encrypted_message));  // Clear the encrypted message buffer
+        memset(encrypted_array, 0, sizeof(encrypted_array));  // Clear the encrypted message array
     }
 }
 
