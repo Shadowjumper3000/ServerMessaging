@@ -1,4 +1,5 @@
 #include "socketutil.h"
+#include "cipherutil.h"
 
 static unsigned int client_count = 0;
 static int uid = 10;
@@ -184,11 +185,17 @@ void send_message(char *s, client_t *cli, int prepend_name) {
     pthread_mutex_lock(&clients_mutex);
     if (cli && cli->room) {
         char message[BUFFER_SIZE + NAME_LEN];
+
         if (prepend_name) {
             snprintf(message, sizeof(message), "%s: %s", cli->name, s);
         } else {
             snprintf(message, sizeof(message), "%s", s);
         }
+
+        // Encrypt the message
+        caesar_encrypt(message, SHIFT);
+
+        // Send to all clients in the room except the sender
         for (int i = 0; i < MAX_CLIENTS; ++i) {
             if (cli->room->clients[i] && cli->room->clients[i]->uid != cli->uid) {
                 if (send(cli->room->clients[i]->sockfd, message, strlen(message), 0) < 0) {
@@ -201,6 +208,7 @@ void send_message(char *s, client_t *cli, int prepend_name) {
     }
     pthread_mutex_unlock(&clients_mutex);
 }
+
 
 void *handle_client(void *arg) {
     char buff_out[BUFFER_SIZE];
@@ -226,9 +234,12 @@ void *handle_client(void *arg) {
     while (!leave_flag) {
         int receive = recv(cli->sockfd, buff_out, BUFFER_SIZE, 0);
         if (receive > 0) {
-            printf("Received command: %s\n", buff_out); // Log the command
+            // Decrypt the incoming message
+            caesar_decrypt(buff_out, SHIFT);
 
-            // Strip the client's name from the command
+            printf("Received command: %s\n", buff_out); // Log the decrypted command
+
+            // Handle the commands or messages
             char *command = strchr(buff_out, ':');
             if (command) {
                 command += 2; // Skip ": "
@@ -287,6 +298,7 @@ void *handle_client(void *arg) {
     pthread_detach(pthread_self());
     return NULL;
 }
+
 
 int main() {
     int option = 1;

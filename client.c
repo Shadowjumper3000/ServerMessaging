@@ -1,4 +1,5 @@
 #include "socketutil.h"
+#include "cipherutil.h"
 
 volatile sig_atomic_t flag = 0;
 int sockfd = 0;
@@ -22,6 +23,8 @@ void send_msg_handler() {
         fgets(message, BUFFER_SIZE, stdin);
         str_trim_lf(message, BUFFER_SIZE);
 
+        if (DEBUG) printf("[DEBUG] Message entered: %s\n", message);
+
         if (strcmp(message, "exit") == 0) {
             break;
         } else if (strncmp(message, "/msg", 4) == 0 || strncmp(message, "/users", 6) == 0) {
@@ -29,6 +32,9 @@ void send_msg_handler() {
         } else {
             snprintf(buffer, sizeof(buffer), "%s: %s", name, message);
         }
+
+        caesar_encrypt(buffer, SHIFT); // Encrypt the message
+        if (DEBUG) printf("[DEBUG] Encrypted message: %s\n", buffer);
 
         if (send(sockfd, buffer, strlen(buffer), 0) == -1) {
             perror("ERROR: send message failed");
@@ -40,6 +46,7 @@ void send_msg_handler() {
     catch_ctrl_c_and_exit(2);
 }
 
+
 void recv_msg_handler() {
     char message[BUFFER_SIZE] = {};
     while (1) {
@@ -48,8 +55,13 @@ void recv_msg_handler() {
             perror("ERROR: recv message failed");
             break;
         }
+
+        if (DEBUG) printf("[DEBUG] Message received (encrypted): %s\n", message);
+
+        caesar_decrypt(message, SHIFT); // Decrypt the message
+        if (DEBUG) printf("[DEBUG] Message decrypted: %s\n", message);
+
         if (receive > 0) {
-            // Check if the message indicates a room change
             if (strstr(message, "created and joined")) {
                 sscanf(message, "Room %s created and joined", current_room);
                 printf("Room %s created and joined\n", current_room);
@@ -61,13 +73,10 @@ void recv_msg_handler() {
             } else if (strstr(message, "has joined the room")) {
                 printf("%s\n", message);
             } else if (strstr(message, "Available rooms")) {
-                // Print available rooms without current room and username
                 printf("%s\n", message);
             } else {
-                // Print the message
                 printf("%s\n", message);
             }
-            // Overwrite the prompt after printing the message
             str_overwrite_stdout_with_room();
         } else if (receive == 0) {
             break;
@@ -75,6 +84,7 @@ void recv_msg_handler() {
         memset(message, 0, sizeof(message));
     }
 }
+
 
 int main() {
     signal(SIGINT, catch_ctrl_c_and_exit);
