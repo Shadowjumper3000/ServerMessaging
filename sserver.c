@@ -149,6 +149,8 @@ void list_rooms(int sockfd) {
             strcat(list_message, "\n");
         }
     }
+    caesar_encrypt(list_message, SHIFT);
+    if (DEBUG) printf("[DEBUG] Encrypting message in list_room");
     pthread_mutex_unlock(&rooms_mutex);
     send(sockfd, list_message, strlen(list_message), 0);
 }
@@ -194,6 +196,7 @@ void send_message(char *s, client_t *cli, int prepend_name) {
 
         // Encrypt the message
         caesar_encrypt(message, SHIFT);
+        if (DEBUG) printf("Encrypted and sending message via send_message");
 
         // Send to all clients in the room except the sender
         for (int i = 0; i < MAX_CLIENTS; ++i) {
@@ -225,6 +228,16 @@ void *handle_client(void *arg) {
     } else {
         strcpy(cli->name, name);
         snprintf(buff_out, sizeof(buff_out), "%s has joined the server\n", cli->name);
+
+        // Debug: before encryption
+        if (DEBUG) printf("[DEBUG] encrypting or sending or something");
+
+        // Encrypt the message before sending
+        caesar_encrypt(buff_out, SHIFT);
+
+        // Debug: after encryption
+        if (DEBUG) printf("[DEBUG] encrypting or sending or something");
+
         printf("%s", buff_out);
         send_message(buff_out, cli, 0);
     }
@@ -253,6 +266,16 @@ void *handle_client(void *arg) {
                     leave_room(cli);
                     create_room(room_name, cli);
                     snprintf(buff_out, sizeof(buff_out), "Room %s created and joined\n", room_name);
+
+                    // Debug: before encryption
+                    if (DEBUG) printf("[DEBUG] encrypting");
+
+                    // Encrypt the message before sending
+                    caesar_encrypt(buff_out, SHIFT);
+
+                    // Debug: after encryption
+                    if (DEBUG) printf("[DEBUG] sending");
+
                     send(cli->sockfd, buff_out, strlen(buff_out), 0);
                 }
             } else if (strncmp(command, "/join", 5) == 0) {
@@ -261,6 +284,16 @@ void *handle_client(void *arg) {
                     leave_room(cli);
                     join_room(cli, room_name);
                     snprintf(buff_out, sizeof(buff_out), "Joined room %s\n", room_name);
+
+                    // Debug: before encryption
+                    if (DEBUG) printf("[DEBUG] encrypting ");
+
+                    // Encrypt the message before sending
+                    caesar_encrypt(buff_out, SHIFT);
+
+                    // Debug: after encryption
+                    if (DEBUG) printf("[DEBUG] sending");
+
                     send(cli->sockfd, buff_out, strlen(buff_out), 0);
                 }
             } else if (strncmp(command, "/list", 5) == 0) {
@@ -280,6 +313,16 @@ void *handle_client(void *arg) {
             }
         } else if (receive == 0 || strcmp(buff_out, "exit") == 0) {
             snprintf(buff_out, sizeof(buff_out), "%s has left\n", cli->name);
+
+            // Debug: before encryption
+            if (DEBUG) printf("[DEBUG] encrypting");
+
+            // Encrypt the message before sending
+            caesar_encrypt(buff_out, SHIFT);
+
+            // Debug: after encryption
+            if (DEBUG) printf("[DEBUG] sending");
+
             printf("%s", buff_out);
             send_message(buff_out, cli, 0);
             leave_flag = 1;
@@ -298,6 +341,7 @@ void *handle_client(void *arg) {
     pthread_detach(pthread_self());
     return NULL;
 }
+
 
 
 int main() {
@@ -400,3 +444,5 @@ int main() {
 
     return EXIT_SUCCESS;
 }
+
+
