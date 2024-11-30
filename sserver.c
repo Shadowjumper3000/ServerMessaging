@@ -161,17 +161,26 @@ void send_private_message(char *target_name, char *message, client_t *cli) {
         if (clients[i] && strcmp(clients[i]->name, target_name) == 0) {
             char private_message[BUFFER_SIZE + NAME_LEN];
             snprintf(private_message, sizeof(private_message), "[Private] %s: %s", cli->name, message);
+
+            if (DEBUG) printf("[DEBUG] Private message encrypted");
+            caesar_encrypt(private_message, SHIFT);
+
+            // Send the encrypted message
             if (send(clients[i]->sockfd, private_message, strlen(private_message), 0) < 0) {
                 perror("ERROR: send to descriptor failed");
             }
             break;
         }
     }
+
     pthread_mutex_unlock(&clients_mutex);
 }
 
+
 void list_users(int sockfd) {
     pthread_mutex_lock(&clients_mutex);
+
+    // Prepare the list message
     char list_message[BUFFER_SIZE] = "Connected users:\n";
     for (int i = 0; i < MAX_CLIENTS; ++i) {
         if (clients[i]) {
@@ -179,9 +188,17 @@ void list_users(int sockfd) {
             strcat(list_message, "\n");
         }
     }
+
     pthread_mutex_unlock(&clients_mutex);
+
+    if (DEBUG) printf("[DEBUG] List Users encrypted");
+    // Encrypt the list message
+    caesar_encrypt(list_message, SHIFT);
+
+    // Send the encrypted message
     send(sockfd, list_message, strlen(list_message), 0);
 }
+
 
 void send_message(char *s, client_t *cli, int prepend_name) {
     pthread_mutex_lock(&clients_mutex);
