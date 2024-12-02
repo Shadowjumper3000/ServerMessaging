@@ -247,13 +247,13 @@ void *handle_client(void *arg) {
         snprintf(buff_out, sizeof(buff_out), "%s has joined the server\n", cli->name);
 
         // Debug: before encryption
-        if (DEBUG) printf("[DEBUG] encrypting or sending or something");
+        //if (DEBUG) printf("[DEBUG] encrypting or sending or something");
 
         // Encrypt the message before sending
-        caesar_encrypt(buff_out, SHIFT);
+        //caesar_encrypt(buff_out, SHIFT);
 
         // Debug: after encryption
-        if (DEBUG) printf("[DEBUG] encrypting or sending or something");
+        //if (DEBUG) printf("[DEBUG] encrypting or sending or something");
 
         printf("%s", buff_out);
         send_message(buff_out, cli, 0);
