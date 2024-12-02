@@ -152,6 +152,7 @@ int main() {
 
     printf("=== WELCOME TO THE CHATROOM ===\n");
     printf("Use /create <room_name> to create a room, /join <room_name> to join a room, or /list to list rooms.\n");
+    printf("Use /users to list all connected users, /msg <user_name> <message> to send a private message.\n");
 
     pthread_t send_msg_thread;
     if (pthread_create(&send_msg_thread, NULL, (void*)send_msg_handler, NULL) != 0) {
